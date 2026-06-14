@@ -20,11 +20,20 @@ repositories {
 dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
-	developmentOnly("org.springframework.boot:spring-boot-docker-compose")
+	implementation("org.springframework.boot:spring-boot-starter-jdbc")
+	runtimeOnly("org.postgresql:postgresql")
 	testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+	// In-memory shards so the test suite runs the real sharded code path without Docker.
+	testRuntimeOnly("com.h2database:h2")
 }
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+}
+
+// Only build the executable Spring Boot jar, not the extra "-plain" jar, so the
+// Dockerfile can copy a single, unambiguously-named artifact.
+tasks.named<Jar>("jar") {
+	enabled = false
 }

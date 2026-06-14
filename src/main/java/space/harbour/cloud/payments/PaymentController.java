@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * REST API for registering StarHarbour coffee payments.
@@ -58,6 +59,35 @@ public class PaymentController {
 	}
 
 	/**
+	 * Submits a bulk batch of payments for <em>asynchronous</em> processing.
+	 *
+	 * <p>The batch and its payments are persisted immediately and a background
+	 * worker creates a remote-system entry for each one. The response is
+	 * {@code 202 Accepted} with the batch id - the client polls
+	 * {@code GET /api/v1/payments/batches/{batchId}} for completion.
+	 */
+	@PostMapping("/bulk")
+	public ResponseEntity<BatchSubmissionResponse> submitBulk(
+			@RequestHeader(STORE_ID_HEADER) @NotBlank(message = "Store-Id header is required") String storeId,
+			@Valid @RequestBody BulkPaymentRequest request) {
+
+		PaymentBatch batch = paymentService.submitBatch(storeId, request.payments());
+		return ResponseEntity.status(HttpStatus.ACCEPTED).body(BatchSubmissionResponse.from(batch));
+	}
+
+	/**
+	 * Reports the status of a bulk batch by its id: overall status plus a
+	 * per-payment breakdown including the remote-system reference once done.
+	 */
+	@GetMapping("/batches/{batchId}")
+	public BatchStatusResponse getBatch(@PathVariable String batchId) {
+		return paymentService.findBatch(batchId)
+				.map(view -> BatchStatusResponse.from(view.batch(), view.payments()))
+				.orElseThrow(() -> new ResponseStatusException(
+						HttpStatus.NOT_FOUND, "No batch with id " + batchId));
+	}
+
+	/**
 	 * Lists all payments for a given store.
 	 */
 	@GetMapping
@@ -66,6 +96,17 @@ public class PaymentController {
 		return paymentService.findByStoreId(storeId).stream()
 				.map(PaymentResponse::from)
 				.toList();
+	}
+
+	/**
+	 * Reports how many payments live on each shard, keyed by shard index.
+	 *
+	 * <p>Handy for verifying that the hash router spreads payments roughly
+	 * uniformly across the shard databases.
+	 */
+	@GetMapping("/shards/distribution")
+	public Map<Integer, Long> shardDistribution() {
+		return paymentService.shardDistribution();
 	}
 
 	/**
